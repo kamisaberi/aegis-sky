@@ -1,0 +1,12 @@
+{
+    "mission_name": "Swarm Defense (Laser Test)",
+    "entities": [
+        // Swarm Leader (Others will flock to him)
+        { "name": "Alpha", "type": "QUADCOPTER", "start_pos": [0, 50, 800], "velocity": [0, 0, -10], "swarm_id": 1 },
+        // Followers
+        { "name": "B-1", "type": "QUADCOPTER", "start_pos": [10, 50, 810], "velocity": [0, 0, -10], "swarm_id": 1 },
+        { "name": "B-2", "type": "QUADCOPTER", "start_pos": [-10, 55, 805], "velocity": [0, 0, -10], "swarm_id": 1 },
+        { "name": "B-3", "type": "QUADCOPTER", "start_pos": [5, 45, 820], "velocity": [0, 0, -10], "swarm_id": 1 },
+        { "name": "B-4", "type": "QUADCOPTER", "start_pos": [-5, 60, 800], "velocity": [0, 0, -10], "swarm_id": 1 }
+    ]
+}
