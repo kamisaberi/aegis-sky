@@ -4,20 +4,37 @@
 #include <iostream>
 #include <csignal>
 #include <filesystem>
+#include <unistd.h>     // fork, execlp
+#include <sys/wait.h>   // waitpid
+#include <sys/types.h>
 
 // -----------------------------------------------------------------------------
-// GLOBAL SIGNAL HANDLER
-// Used to capture Ctrl+C (SIGINT) and shut down the bridge cleanly.
+// GLOBAL STATE FOR CLEANUP
 // -----------------------------------------------------------------------------
 namespace {
-    // Pointer to the active engine (only valid during lifetime of main)
     aegis::sim::engine::SimEngine* g_engine_ptr = nullptr;
+    pid_t g_viz_pid = -1; // Process ID of the Python script
 }
 
-void signal_handler(int signal) {
-    if (signal == SIGINT && g_engine_ptr) {
-        spdlog::warn("\n[Main] SIGINT received. Initiating graceful shutdown...");
+// -----------------------------------------------------------------------------
+// CLEANUP FUNCTION
+// Kills the simulator loop AND the Python GUI
+// -----------------------------------------------------------------------------
+void shutdown_system(int signal) {
+    spdlog::warn("\n[Main] Shutdown signal ({}) received...", signal);
+
+    // 1. Stop the C++ Engine
+    if (g_engine_ptr) {
         g_engine_ptr->stop();
+    }
+
+    // 2. Kill the Python Child Process
+    if (g_viz_pid > 0) {
+        spdlog::info("[Main] Terminating Visualization (PID: {})...", g_viz_pid);
+        kill(g_viz_pid, SIGTERM);
+        int status;
+        waitpid(g_viz_pid, &status, 0); // Wait for it to die to prevent Zombies
+        g_viz_pid = -1;
     }
 }
 
@@ -26,23 +43,27 @@ void signal_handler(int signal) {
 // -----------------------------------------------------------------------------
 int main(int argc, char** argv) {
     // 1. Setup Logging
-    spdlog::set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
+    spdlog::set_pattern("[%H:%M:%S] [%^%l%$] %v");
     spdlog::set_level(spdlog::level::debug);
 
-    spdlog::info("========================================");
     spdlog::info("   AEGIS SKY: THE MATRIX (SIMULATOR)    ");
-    spdlog::info("========================================");
 
     // 2. Parse Arguments
     std::string scenario_path = "assets/scenarios/default.json";
-    if (argc > 1) {
-        scenario_path = argv[1];
+    bool use_viz = false;
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--viz") {
+            use_viz = true;
+        } else if (arg.find(".json") != std::string::npos) {
+            scenario_path = arg;
+        }
     }
 
-    // 3. Verify File Exists
+    // 3. Verify Scenario Exists
     if (!std::filesystem::exists(scenario_path)) {
-        spdlog::critical("[Main] Scenario file not found: {}", scenario_path);
-        spdlog::info("Usage: ./aegis_sim <path_to_scenario.json>");
+        spdlog::critical("[Main] Scenario not found: {}", scenario_path);
         return -1;
     }
 
@@ -50,28 +71,54 @@ int main(int argc, char** argv) {
     aegis::sim::engine::SimEngine matrix;
     g_engine_ptr = &matrix;
 
-    // 5. Register Signal Handler
-    std::signal(SIGINT, signal_handler);
+    // 5. Register Signals (Ctrl+C)
+    std::signal(SIGINT, shutdown_system);
+    std::signal(SIGTERM, shutdown_system);
 
-    // 6. Run Simulation
     try {
-        spdlog::info("[Main] Target Scenario: {}", scenario_path);
-        
-        // Initialize (Loads JSON, Opens Shared Mem)
+        // 6. Initialize (Creates Shared Memory /dev/shm/aegis_bridge_v1)
         matrix.initialize(scenario_path);
-        
-        // Enter the Infinite Loop
-        matrix.run(); 
+
+        // 7. LAUNCH PYTHON VIZ (Fork Logic)
+        if (use_viz) {
+            // Check if python script exists
+            std::string py_script = "tools/bridge_viz.py";
+            if (!std::filesystem::exists(py_script)) {
+                spdlog::error("[Main] Cannot find '{}'. Run from repo root!", py_script);
+            } else {
+                g_viz_pid = fork(); // Split process into two
+
+                if (g_viz_pid == 0) {
+                    // --- CHILD PROCESS (Python) ---
+                    // Replace this process with Python
+                    // execlp(Executable, Arg0, Arg1, NULL)
+                    spdlog::info("[Child] Launching Python...");
+                    execlp("python3", "python3", py_script.c_str(), NULL);
+                    
+                    // If we get here, execlp failed
+                    spdlog::critical("[Child] Failed to spawn Python!");
+                    exit(1);
+                }
+                else if (g_viz_pid > 0) {
+                    // --- PARENT PROCESS (C++) ---
+                    spdlog::info("[Main] Viz Tool spawned with PID: {}", g_viz_pid);
+                }
+                else {
+                    spdlog::error("[Main] Fork failed!");
+                }
+            }
+        }
+
+        // 8. Run Simulation Loop (Blocking)
+        matrix.run();
+
     }
     catch (const std::exception& e) {
-        spdlog::critical("[Main] UNHANDLED EXCEPTION: {}", e.what());
-        
-        // Attempt cleanup even on crash
-        g_engine_ptr = nullptr;
+        spdlog::critical("[Main] CRASH: {}", e.what());
+        shutdown_system(SIGTERM);
         return -1;
     }
 
-    spdlog::info("[Main] Shutdown complete. Goodbye.");
-    g_engine_ptr = nullptr;
+    shutdown_system(0); // Clean exit
     return 0;
 }
