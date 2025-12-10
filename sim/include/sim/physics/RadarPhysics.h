@@ -8,15 +8,15 @@
 namespace aegis::sim::physics {
 
     // -------------------------------------------------------------------------
-    // CONSTANTS & CONFIG
+    // CONSTANTS
     // -------------------------------------------------------------------------
     static constexpr double TX_POWER_WATTS = 200.0;     
-    static constexpr double THERMAL_NOISE_FLOOR = 1e-13; 
-    static constexpr double JAMMER_POWER_WATTS = 10.0; 
-    static constexpr double GROUND_REFLECTIVITY = 0.5; // for Multipath
+    static constexpr double THERMAL_NOISE_FLOOR = 1e-13; // Base noise without jamming 
+    static constexpr double HITBOX_RADIUS = 0.5; // Meters
+    static constexpr double JAMMER_POWER_WATTS = 10.0; // Power of an enemy jammer
 
     // -------------------------------------------------------------------------
-    // EW: Calculate Noise Floor (Thermal + Jammers)
+    // HELPER: Calculate Dynamic Noise Floor (EW Logic)
     // -------------------------------------------------------------------------
     double RadarPhysics::calculate_environment_noise(
         const std::vector<std::shared_ptr<engine::SimEntity>>& entities, 
@@ -25,14 +25,20 @@ namespace aegis::sim::physics {
         double total_noise = THERMAL_NOISE_FLOOR;
 
         for (const auto& entity : entities) {
-            // Check for 'Jammer' in name as a simplified capability flag
-            // In prod, use entity->capabilities.has_jammer
-            if (entity->get_name().find("Jammer") != std::string::npos) {
-                double dist_sq = glm::distance2(radar_pos, entity->get_position());
-                if (dist_sq < 1.0) dist_sq = 1.0; 
+            // Check if this entity is a jammer (Simulating EW)
+            // For MVP: We assume 'FIXED_WING' types might have jammers enabled
+            // In a full system, check entity->is_jammer_active()
+            // Here we use a heuristic for demonstration:
+            bool is_jamming = (entity->get_name().find("Jammer") != std::string::npos);
 
-                // Jamming follows 1/R^2 (One-Way Trip) - Extremely effective
+            if (is_jamming) {
+                double dist_sq = glm::distance2(radar_pos, entity->get_position());
+                if (dist_sq < 1.0) dist_sq = 1.0; // Protect div by zero
+
+                // One-way Friis Transmission Equation for Jamming
+                // Power drops by R^2 (Jamming is very effective vs R^4 Radar)
                 double received_jamming = JAMMER_POWER_WATTS / (4.0 * M_PI * dist_sq);
+                
                 total_noise += received_jamming;
             }
         }
@@ -40,109 +46,62 @@ namespace aegis::sim::physics {
     }
 
     // -------------------------------------------------------------------------
-    // INTERNAL: Single Ray Math
+    // CORE RAYCAST LOGIC
     // -------------------------------------------------------------------------
-    RadarReturn cast_ray_internal(
-        const glm::dvec3& origin, 
-        const glm::dvec3& beam_dir, 
-        const glm::dvec3& target_pos,
-        const glm::dvec3& target_vel,
-        double target_rcs,
-        const RadarConfig& config,
-        double noise_floor,
-        const engine::WeatherState& weather
-    ) {
-        RadarReturn ret = {false, 0,0,0,0, -100.0};
-
-        // 1. Geometry Check
-        glm::dvec3 L = target_pos - origin;
-        double dist_sq = glm::length2(L);
-        if (dist_sq > (config.max_range * config.max_range)) return ret;
-
-        // 2. FOV Check
-        glm::dvec3 to_target = glm::normalize(L);
-        glm::dvec3 flat_target = glm::normalize(glm::dvec3(to_target.x, 0, to_target.z));
-        glm::dvec3 flat_forward = glm::normalize(glm::dvec3(beam_dir.x, 0, beam_dir.z));
-        
-        if (glm::dot(flat_target, flat_forward) < std::cos(glm::radians(config.fov_azimuth_deg / 2.0))) {
-            return ret; 
-        }
-
-        // 3. Hit Detected - Calculate Physics
-        ret.detected = true;
-        ret.range = std::sqrt(dist_sq);
-        ret.azimuth = std::atan2(to_target.x, to_target.z);
-        ret.elevation = std::asin(to_target.y);
-        ret.velocity = glm::dot(target_vel, to_target); // Doppler
-
-        // 4. Signal Strength (Radar Equation)
-        double r4 = ret.range * ret.range * ret.range * ret.range;
-        double power_received = (TX_POWER_WATTS * target_rcs) / (r4 + 1e-9);
-        
-        // 5. Atmospheric Attenuation (Rain Fade)
-        // Approx 0.02 dB per km per mm/hr
-        double dist_km = ret.range / 1000.0;
-        double rain_loss_db = 0.02 * weather.rain_intensity * dist_km * 2.0; // Round trip
-        
-        double snr_linear = power_received / noise_floor;
-        ret.snr_db = 10.0 * std::log10(snr_linear) - rain_loss_db;
-
-        // 6. Sensor Noise Injection
-        ret.range    += math::Random::gaussian(config.noise_range_m);
-        ret.azimuth  += math::Random::gaussian(config.noise_angle_rad);
-        ret.elevation+= math::Random::gaussian(config.noise_angle_rad);
-        ret.velocity += math::Random::gaussian(config.noise_vel_ms);
-        ret.snr_db   += math::Random::gaussian(1.0); // Scintillation
-
-        return ret;
-    }
-
-    // -------------------------------------------------------------------------
-    // PUBLIC: Scan Target (Includes Multipath)
-    // -------------------------------------------------------------------------
-    std::vector<RadarReturn> RadarPhysics::scan_target(
+    RadarReturn RadarPhysics::cast_ray(
         const glm::dvec3& radar_pos, 
         const glm::dvec3& radar_forward, 
         const engine::SimEntity& target,
         const RadarConfig& config,
-        double noise_floor,
-        const engine::WeatherState& weather
+        double current_noise_floor // <--- NEW PARAMETER
     ) {
-        std::vector<RadarReturn> hits;
+        RadarReturn ret = {false, 0.0, 0.0, 0.0, 0.0, -100.0};
 
-        // 1. Direct Path
-        RadarReturn direct = cast_ray_internal(
-            radar_pos, radar_forward, 
-            target.get_position(), target.get_velocity(), target.get_rcs(),
-            config, noise_floor, weather
-        );
+        // 1. GEOMETRY CHECK (Is the target hit by the ray?)
+        glm::dvec3 L = target.get_position() - radar_pos;
+        double dist_sq = glm::length2(L);
+        if (dist_sq > (config.max_range * config.max_range)) return ret;
+
+        // 2. FIELD OF VIEW CHECK
+        glm::dvec3 to_target_dir = glm::normalize(L);
         
-        if (direct.detected) hits.push_back(direct);
+        // Flatten vectors to XZ plane for Azimuth check
+        glm::dvec3 flat_target = glm::normalize(glm::dvec3(to_target_dir.x, 0, to_target_dir.z));
+        glm::dvec3 flat_forward = glm::normalize(glm::dvec3(radar_forward.x, 0, radar_forward.z));
+        
+        double dot_az = glm::dot(flat_target, flat_forward);
+        double min_dot_az = std::cos(glm::radians(config.fov_azimuth_deg / 2.0));
+        
+        if (dot_az < min_dot_az) return ret; // Outside Horizontal FOV
 
-        // 2. Multipath (Ghosting)
-        // If target is low altitude (< 20m), assume ground bounce
-        if (target.get_position().y < 20.0 && target.get_position().y > 0.5) {
-            
-            // Mirror target underground
-            glm::dvec3 ghost_pos = target.get_position();
-            ghost_pos.y = -ghost_pos.y; 
-
-            // Calculate ghost return
-            RadarReturn ghost = cast_ray_internal(
-                radar_pos, radar_forward, 
-                ghost_pos, target.get_velocity(), target.get_rcs(),
-                config, noise_floor, weather
-            );
-
-            if (ghost.detected) {
-                // Apply Ground Reflection Loss
-                ghost.snr_db -= 6.0; 
-                // Flag as ghost (optional, mostly for debug/truth data)
-                // In real radar, this just looks like a target underground
-                hits.push_back(ghost);
-            }
+        // Elevation Check (Simple cone)
+        if (std::abs(to_target_dir.y) > std::sin(glm::radians(config.fov_elevation_deg / 2.0))) {
+             // return ret; // Optional strict elevation check
         }
 
-        return hits;
+        // 3. HIT DETECTED
+        ret.detected = true;
+        ret.range = std::sqrt(dist_sq);
+        ret.azimuth = std::atan2(to_target_dir.x, to_target_dir.z); // Relative to World Z (North)
+        ret.elevation = std::asin(to_target_dir.y);
+
+        // 4. DOPPLER PHYSICS
+        ret.velocity = glm::dot(target.get_velocity(), to_target_dir);
+
+        // 5. SIGNAL STRENGTH (With Jamming)
+        double r4 = ret.range * ret.range * ret.range * ret.range;
+        double rcs = target.get_rcs();
+        double power_received = (TX_POWER_WATTS * rcs) / (r4 + 1e-9);
+        
+        // Use the DYNAMIC noise floor (Thermal + Jamming)
+        ret.snr_db = 10.0 * std::log10(power_received / current_noise_floor);
+
+        // 6. INJECT SENSOR ERROR (Gaussian Noise)
+        ret.range += math::Random::gaussian(config.noise_range_m);
+        ret.azimuth += math::Random::gaussian(config.noise_angle_rad);
+        ret.velocity += math::Random::gaussian(config.noise_vel_ms);
+        ret.snr_db += math::Random::gaussian(1.0); // Scintillation
+
+        return ret;
     }
 }
