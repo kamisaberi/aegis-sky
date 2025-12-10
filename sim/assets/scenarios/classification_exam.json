@@ -1,0 +1,41 @@
+{
+    "mission_name": "Micro-Doppler Classification Exam",
+    "entities": [
+        {
+            "name": "Hovering-Hawk",
+            "type": "BIRD",
+            "rcs": 0.01,
+            "start_pos": [-20.0, 50.0, 200.0],
+            "waypoints": [[-20.0, 50.0, 200.0]],
+            "micro_doppler": {
+                "blade_speed": 2.0,
+                "blade_rate_hz": 5.0,
+                "is_flapping": true
+            }
+        },
+        {
+            "name": "Hovering-Mavic",
+            "type": "QUADCOPTER",
+            "rcs": 0.01,
+            "start_pos": [0.0, 50.0, 200.0],
+            "waypoints": [[0.0, 50.0, 200.0]],
+            "micro_doppler": {
+                "blade_speed": 150.0,
+                "blade_rate_hz": 100.0,
+                "is_flapping": false
+            }
+        },
+        {
+            "name": "Weather-Balloon",
+            "type": "UNKNOWN",
+            "rcs": 0.5,
+            "start_pos": [20.0, 50.0, 200.0],
+            "waypoints": [[20.0, 50.0, 200.0]],
+            "micro_doppler": {
+                "blade_speed": 0.0,
+                "blade_rate_hz": 0.0,
+                "is_flapping": false
+            }
+        }
+    ]
+}
