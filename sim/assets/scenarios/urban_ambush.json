@@ -1,0 +1,16 @@
+{
+    "mission_name": "Urban Canyon Ambush",
+    "entities": [
+        {
+            "name": "Target-X",
+            "type": "QUADCOPTER",
+            "rcs": 0.05,
+            "start_pos": [-50.0, 15.0, 300.0],
+            "waypoints": [
+                [50.0, 15.0, 300.0] 
+            ]
+        }
+    ]
+    // Note: In SimEngine, we hardcoded a building at Z=200, X=0.
+    // As the drone flies from X=-50 to X=50, it will pass behind the building.
+}
