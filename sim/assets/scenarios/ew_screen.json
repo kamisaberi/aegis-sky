@@ -1,0 +1,38 @@
+{
+    "mission_name": "Electronic Warfare Screen",
+    "entities": [
+        {
+            "name": "Stand-In-Jammer-01",
+            "type": "FIXED_WING",
+            "rcs": 2.0,
+            "temperature_c": 90.0,
+            "speed": 15.0,
+            "start_pos": [0.0, 200.0, 1000.0],
+            "waypoints": [
+                [0.0, 200.0, 200.0]
+            ]
+        },
+        {
+            "name": "Stealth-Infiltrator-A",
+            "type": "QUADCOPTER",
+            "rcs": 0.005,
+            "temperature_c": 35.0,
+            "speed": 10.0,
+            "start_pos": [-50.0, 30.0, 1100.0],
+            "waypoints": [
+                [-20.0, 10.0, 0.0]
+            ]
+        },
+        {
+            "name": "Stealth-Infiltrator-B",
+            "type": "QUADCOPTER",
+            "rcs": 0.005,
+            "temperature_c": 35.0,
+            "speed": 10.0,
+            "start_pos": [50.0, 30.0, 1100.0],
+            "waypoints": [
+                [20.0, 10.0, 0.0]
+            ]
+        }
+    ]
+}
