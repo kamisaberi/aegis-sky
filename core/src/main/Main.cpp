@@ -4,56 +4,67 @@
 #include <memory>
 
 #include "drivers/bridge_client/ShmReader.h"
-#include "drivers/bridge_client/SimRadar.cpp" // Include impl for MVP simplicity
-// #include "services/comms/StationLink.h"
+#include "drivers/bridge_client/SimRadar.cpp"
+#include "services/comms/StationLink.h" // <--- Include this
 
 using namespace aegis::core;
 
 int main(int argc, char** argv) {
-    std::cout << "========================================" << std::endl;
-    std::cout << "   AEGIS CORE: FLIGHT SOFTWARE v1.0     " << std::endl;
-    std::cout << "========================================" << std::endl;
+    // ... [Init logging] ...
 
-    // 1. Initialize Hardware Abstraction (HAL)
-    // For Simulation Mode, we use the Bridge Drivers
+    // 1. Hardware Drivers (Bridge to Sim)
     auto bridge = std::make_shared<drivers::ShmReader>();
-
-    // Retry loop to connect to Sim
     while (!bridge->connect()) {
+        std::cout << "Waiting for Sim..." << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
-
     auto radar_driver = std::make_unique<drivers::SimRadar>(bridge);
-    // auto comms_server = std::make_unique<services::StationLink>(9090);
 
-    // 2. Main Real-Time Loop
-    std::cout << "[Core] Entering Guidance Loop..." << std::endl;
+    // 2. Start Station Server
+    auto station_link = std::make_unique<services::StationLink>(9090);
+    if (!station_link->start()) {
+        std::cerr << "Failed to start Station TCP Server!" << std::endl;
+        return -1;
+    }
 
+    // Main Loop
     while (true) {
-        // A. SENSOR INGESTION
+        // A. READ SENSORS
         auto cloud = radar_driver->get_scan();
+        double now = cloud.timestamp;
 
-        if (!cloud.points.empty()) {
-            std::cout << "[Core] Radar Contact! Targets: " << cloud.points.size()
-                      << " | Nearest Dist: " << cloud.points[0].z << "m" << std::endl;
+        // B. READ COMMANDS FROM STATION (UI)
+        ipc::station::CommandPacket ui_cmd;
+        bool has_cmd = station_link->get_latest_command(ui_cmd);
 
-            // B. FUSION & TRACKING (Placeholder)
-            // auto tracks = tracker->process(cloud);
+        // C. SEND COMMANDS TO SIMULATOR
+        // The UI controls the Pan/Tilt/Fire
+        // We forward this to the physics engine via Shared Memory
+        ipc::ControlCommand sim_cmd;
 
-            // C. FIRE CONTROL
-            // if (tracks.has_threat()) ...
+        // Defaults (Stationary)
+        sim_cmd.pan_velocity = 0.0f;
+        sim_cmd.tilt_velocity = 0.0f;
+        sim_cmd.fire_trigger = false;
 
-            // D. COMMAND OUTPUT (To Sim)
-            ipc::ControlCommand cmd;
-            cmd.pan_velocity = 0.1f; // Test: Rotate camera slowly
-            cmd.fire_trigger = false;
-            bridge->send_command(cmd);
+        if (has_cmd) {
+            sim_cmd.pan_velocity = ui_cmd.pan_velocity;
+            sim_cmd.tilt_velocity = ui_cmd.tilt_velocity;
 
-            // E. TELEMETRY OUTPUT (To Station)
-            // comms_server->broadcast_tracks(tracks);
+            if (ui_cmd.arm_system && ui_cmd.fire_trigger) {
+                sim_cmd.fire_trigger = true;
+                std::cout << "[Core] FIRE COMMAND RECEIVED" << std::endl;
+            }
         }
 
-        // High-speed loop (100Hz)
+        bridge->send_command(sim_cmd);
+
+        // D. SEND TELEMETRY TO STATION
+        // We define "Pan" as time for testing, or read actual gimbal feedback if we had it
+        // For MVP, echo back the timestamp and target count
+        station_link->broadcast_telemetry(now, 0.0f, 0.0f, cloud.points.size());
+
+        // Loop pacing
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
