@@ -1,0 +1,15 @@
+{
+    "mission_name": "Doppler Notch Crossing",
+    "entities": [
+        {
+            "name": "Cross-Traffic",
+            "type": "FIXED_WING",
+            "rcs": 0.1,
+            "speed": 20.0,
+            "start_pos": [-300.0, 100.0, 400.0],
+            "waypoints": [
+                [300.0, 100.0, 400.0]
+            ]
+        }
+    ]
+}
