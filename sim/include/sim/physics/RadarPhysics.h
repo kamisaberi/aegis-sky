@@ -5,6 +5,18 @@
 
 namespace aegis::sim::physics {
 
+// Add to struct RadarConfig
+struct RadarConfig {
+    double fov_azimuth_deg = 120.0;   // +/- 60 degrees left/right
+    double fov_elevation_deg = 30.0;  // +/- 15 degrees up/down
+    double max_range = 2000.0;        // Meters
+    
+    // Error Characteristics (The Noise)
+    double noise_range = 0.5;         // +/- 0.5m error
+    double noise_angle = 0.01;        // +/- 0.01 rad error
+    double noise_vel = 0.2;           // +/- 0.2 m/s error
+};
+
     struct RadarReturn {
         bool detected;
         double range;       // Distance (meters)
