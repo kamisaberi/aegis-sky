@@ -1,0 +1,37 @@
+{
+    "mission_name": "Saturation Attack Pattern Alpha",
+    "entities": [
+        {
+            "name": "Swarm-Ldr",
+            "type": "QUADCOPTER",
+            "rcs": 0.01,
+            "start_pos": [-100.0, 50.0, 500.0],
+            "waypoints": [
+                [-50.0, 40.0, 300.0],
+                [0.0, 10.0, 0.0]
+            ],
+            "speed": 15.0
+        },
+        {
+            "name": "Swarm-Wing-L",
+            "type": "QUADCOPTER",
+            "rcs": 0.01,
+            "start_pos": [-150.0, 50.0, 500.0],
+            "waypoints": [
+                [-100.0, 40.0, 300.0],
+                [-20.0, 10.0, 0.0]
+            ],
+            "speed": 15.0
+        },
+        {
+            "name": "Kamikaze-FPV",
+            "type": "FIXED_WING",
+            "rcs": 0.005,
+            "start_pos": [20.0, 200.0, 600.0],
+            "waypoints": [
+                [0.0, 0.0, 0.0]
+            ],
+            "speed": 45.0
+        }
+    ]
+}
