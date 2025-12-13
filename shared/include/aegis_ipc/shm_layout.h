@@ -3,6 +3,14 @@
 
 namespace aegis::ipc {
 
+    
+struct ControlCommand {
+    uint64_t timestamp;
+    float pan_velocity;  // Radians per second
+    float tilt_velocity; // Radians per second
+    bool fire_trigger;   // True = SHOOT
+    bool jammer_active;  // True = RF Jamming
+};
     // Magic Number to ensure Sim and Core are talking about the same memory
     static constexpr uint32_t BRIDGE_MAGIC = 0xAE6155KY; 
     static constexpr char BRIDGE_NAME[] = "/aegis_bridge_v1";
