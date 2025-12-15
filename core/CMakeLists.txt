@@ -24,6 +24,9 @@ target_include_directories(aegis_shared INTERFACE
 find_package(spdlog REQUIRED)
 find_package(CUDA REQUIRED)
 
+find_package(gRPC REQUIRED)
+find_package(Protobuf REQUIRED)
+
 # Proprietary Libraries (xInfer / xTorch)
 # Ensure you have FindxInfer.cmake in ../cmake/modules/
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/../cmake/modules")
