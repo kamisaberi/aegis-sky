@@ -1,0 +1,8 @@
+{
+    "name": "aegis-core",
+    "dependencies": [
+        "spdlog",
+        "grpc",
+        "protobuf"
+    ]
+}
